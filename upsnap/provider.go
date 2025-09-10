@@ -37,6 +37,10 @@ type DeviceResponse struct {
 	Netmask string `json:"netmask"`
 }
 
+type DeviceGroupResponse struct {
+	Name string `json:"name"`
+}
+
 // type PermissionList struct {
 // 	Items []struct {
 // 		Delete []string `json:"delete"`
@@ -136,7 +140,8 @@ func Provider() *schema.Provider {
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
-			"upsnap_device": resourceDevice(),
+			"upsnap_device":       resourceDevice(),
+			"upsnap_device_group": resourceDeviceGroup(),
 		},
 
 		ConfigureContextFunc: providerConfigure,
@@ -350,4 +355,145 @@ func resourceDevice() *schema.Resource {
 			},
 		},
 	}
+}
+
+func resourceDeviceGroup() *schema.Resource {
+
+	return &schema.Resource{
+
+		CreateContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+
+			apiData := m.(*APIClient)
+
+			insertUri := fmt.Sprintf("%s%s", apiData.UpsnapHost, constants.InsertGroupUri)
+
+			bodyData := map[string]string{
+				"name": d.Get("name").(string),
+			}
+			jsonBody, _ := json.Marshal(bodyData)
+
+			req, _ := http.NewRequest("POST", insertUri, bytes.NewBuffer(jsonBody))
+			req.Header.Set("Authorization", "Bearer "+apiData.Token)
+			req.Header.Set("Content-Type", "application/json")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				panic(err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				panic(fmt.Errorf("auth failed: %s", resp.Status))
+			}
+
+			var apiResp APIResponse
+			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+				panic(err)
+			}
+
+			d.SetId(apiResp.ID)
+
+			return nil
+
+		},
+		ReadContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+
+			apiData := m.(*APIClient)
+
+			id := d.Id()
+
+			apiUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.InsertGroupUri, id)
+
+			req, _ := http.NewRequest("GET", apiUri, nil)
+			req.Header.Set("Authorization", "Bearer "+apiData.Token)
+			req.Header.Set("Content-Type", "application/json")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				panic(err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				panic(fmt.Errorf("auth failed: %s", resp.Status))
+			}
+
+			var apiResp DeviceGroupResponse
+			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+				panic(err)
+			}
+
+			d.Set("name", apiResp.Name)
+
+			return nil
+
+		},
+		UpdateContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+
+			apiData := m.(*APIClient)
+
+			id := d.Id()
+
+			insertUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.InsertGroupUri, id)
+
+			bodyData := map[string]string{
+				"name": d.Get("name").(string),
+			}
+			jsonBody, _ := json.Marshal(bodyData)
+
+			req, _ := http.NewRequest("PATCH", insertUri, bytes.NewBuffer(jsonBody))
+			req.Header.Set("Authorization", "Bearer "+apiData.Token)
+			req.Header.Set("Content-Type", "application/json")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				panic(err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				panic(fmt.Errorf("auth failed: %s", resp.Status))
+			}
+
+			var apiResp APIResponse
+			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+				panic(err)
+			}
+			return nil
+
+		},
+		DeleteContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+
+			apiData := m.(*APIClient)
+
+			id := d.Id()
+
+			insertUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.InsertGroupUri, id)
+
+			req, _ := http.NewRequest("DELETE", insertUri, nil)
+			req.Header.Set("Authorization", "Bearer "+apiData.Token)
+			req.Header.Set("Content-Type", "application/json")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				panic(err)
+			}
+			defer resp.Body.Close()
+
+			d.SetId("")
+			return nil
+
+		},
+		Schema: map[string]*schema.Schema{
+			"name": {
+				Type:     schema.TypeString,
+				Required: true,
+			},
+		},
+	}
+
 }
