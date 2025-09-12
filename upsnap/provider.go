@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/mjsully/terraform-provider-upsnap/api"
 	"github.com/mjsully/terraform-provider-upsnap/constants"
 )
 
@@ -19,15 +20,8 @@ type APIClient struct {
 	UserID     string
 }
 
-type AuthResponse struct {
-	Token string `json:"token"` // adapt to actual API response
-	User  struct {
-		ID string `json:"id"`
-	} `json:"record"`
-}
-
 type APIResponse struct {
-	ID string `json:"id"` // adapt to actual API response
+	ID string `json:"id"`
 }
 
 type DeviceResponse struct {
@@ -40,85 +34,6 @@ type DeviceResponse struct {
 type DeviceGroupResponse struct {
 	Name string `json:"name"`
 }
-
-// type PermissionList struct {
-// 	Items []struct {
-// 		Delete []string `json:"delete"`
-// 		Power  []string `json:"power"`
-// 		Read   []string `json:"read"`
-// 		Update []string `json:"update"`
-// 	} `json:"items"`
-// }
-
-func Authenticate(upsnapHost string, username string, password string) AuthResponse {
-
-	apiUrl := fmt.Sprintf("%s%s", upsnapHost, constants.AuthUri)
-
-	bodyData := map[string]string{
-		"identity": username,
-		"password": password,
-	}
-	jsonBody, _ := json.Marshal(bodyData)
-
-	req, err := http.NewRequest("POST", apiUrl, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		panic(err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		panic(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		panic(fmt.Errorf("auth failed: %s", resp.Status))
-	}
-
-	var authResp AuthResponse
-	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
-		panic(err)
-	}
-
-	return authResp
-
-}
-
-// func GetPermissions(upsnapHost string, apiToken string) PermissionList {
-
-// 	apiUrl := fmt.Sprintf("%s%s", upsnapHost, constants.PermissionsUri)
-
-// 	req, _ := http.NewRequest("GET", apiUrl, nil)
-// 	req.Header.Set("Authorization", "Bearer "+apiToken)
-// 	req.Header.Set("Content-Type", "application/json")
-
-// 	client := &http.Client{}
-// 	resp, err := client.Do(req)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	defer resp.Body.Close()
-
-// 	if resp.StatusCode != http.StatusOK {
-// 		panic(fmt.Errorf("auth failed: %s", resp.Status))
-// 	}
-
-// 	var apiResp PermissionList
-// 	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-// 		panic(err)
-// 	}
-
-// 	// deleteList := apiResp.Items[0].Delete
-// 	// deleteList = append(deleteList, "my-new-id")
-
-// 	// fmt.Println(deleteList)
-
-// 	return apiResp
-
-// }
 
 func Provider() *schema.Provider {
 	return &schema.Provider{
@@ -154,7 +69,7 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 	password := d.Get("password").(string)
 	upsnapHost := d.Get("upsnap_host").(string)
 
-	token := Authenticate(upsnapHost, username, password)
+	token := api.Authenticate(upsnapHost, username, password)
 
 	apiClient := &APIClient{
 		Client:     &http.Client{},
@@ -172,7 +87,7 @@ func resourceDevice() *schema.Resource {
 
 			apiData := m.(*APIClient)
 
-			insertUri := fmt.Sprintf("%s%s", apiData.UpsnapHost, constants.InsertUri)
+			apiUri := fmt.Sprintf("%s%s", apiData.UpsnapHost, constants.DeviceUri)
 
 			bodyData := map[string]string{
 				"name":    d.Get("name").(string),
@@ -180,64 +95,21 @@ func resourceDevice() *schema.Resource {
 				"mac":     d.Get("mac").(string),
 				"netmask": d.Get("netmask").(string),
 			}
+			if v, ok := d.GetOk("description"); ok {
+				bodyData["description"] = v.(string)
+			}
+			if v, ok := d.GetOk("group"); ok {
+				bodyData["group"] = v.(string)
+			}
 			jsonBody, _ := json.Marshal(bodyData)
 
-			req, _ := http.NewRequest("POST", insertUri, bytes.NewBuffer(jsonBody))
-			req.Header.Set("Authorization", "Bearer "+apiData.Token)
-			req.Header.Set("Content-Type", "application/json")
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				panic(err)
-			}
+			resp, _ := api.ApiInteraction(apiUri, apiData.Token, "POST", bytes.NewBuffer(jsonBody))
 			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				panic(fmt.Errorf("auth failed: %s", resp.Status))
-			}
 
 			var apiResp APIResponse
 			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
 				panic(err)
 			}
-
-			// permissions := GetPermissions(apiData.UpsnapHost, apiData.Token)
-
-			// deleteList := permissions.Items[0].Delete
-			// updateList := permissions.Items[0].Update
-			// readList := permissions.Items[0].Read
-			// powerList := permissions.Items[0].Power
-			// deleteList = append(deleteList, apiResp.ID)
-			// updateList = append(updateList, apiResp.ID)
-			// readList = append(readList, apiResp.ID)
-			// powerList = append(powerList, apiResp.ID)
-
-			// permissionsUri := fmt.Sprintf("%s%s", apiData.UpsnapHost, constants.PermissionsUri)
-
-			// permissionsBodyData := map[string]interface{}{
-			// 	"delete": deleteList,
-			// 	"update": updateList,
-			// 	"read":   readList,
-			// 	"power":  powerList,
-			// }
-			// permissionsJsonBody, _ := json.Marshal(permissionsBodyData)
-
-			// req, _ = http.NewRequest("POST", permissionsUri, bytes.NewBuffer(permissionsJsonBody))
-
-			// req.Header.Set("Authorization", "Bearer "+apiData.Token)
-			// req.Header.Set("Content-Type", "application/json")
-
-			// client = &http.Client{}
-			// resp, err = client.Do(req)
-			// if err != nil {
-			// 	panic(err)
-			// }
-			// defer resp.Body.Close()
-
-			// if resp.StatusCode != http.StatusOK {
-			// 	panic(fmt.Errorf("auth failed: %s", resp.Status))
-			// }
 
 			d.SetId(apiResp.ID)
 			return nil
@@ -247,23 +119,10 @@ func resourceDevice() *schema.Resource {
 			apiData := m.(*APIClient)
 
 			id := d.Id()
+			apiUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.DeviceUri, id)
 
-			apiUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.InsertUri, id)
-
-			req, _ := http.NewRequest("GET", apiUri, nil)
-			req.Header.Set("Authorization", "Bearer "+apiData.Token)
-			req.Header.Set("Content-Type", "application/json")
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				panic(err)
-			}
+			resp, _ := api.ApiInteraction(apiUri, apiData.Token, "GET", nil)
 			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				panic(fmt.Errorf("auth failed: %s", resp.Status))
-			}
 
 			var apiResp DeviceResponse
 			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
@@ -274,6 +133,9 @@ func resourceDevice() *schema.Resource {
 			d.Set("ip", apiResp.IP)
 			d.Set("mac", apiResp.Mac)
 			d.Set("netmask", apiResp.Netmask)
+			if v, ok := d.GetOk("description"); ok {
+				d.Set("description", v.(string))
+			}
 
 			return nil
 		},
@@ -282,8 +144,7 @@ func resourceDevice() *schema.Resource {
 			apiData := m.(*APIClient)
 
 			id := d.Id()
-
-			insertUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.InsertUri, id)
+			apiUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.DeviceUri, id)
 
 			bodyData := map[string]string{
 				"name":    d.Get("name").(string),
@@ -291,22 +152,18 @@ func resourceDevice() *schema.Resource {
 				"mac":     d.Get("mac").(string),
 				"netmask": d.Get("netmask").(string),
 			}
+			if v, ok := d.GetOk("description"); ok {
+				bodyData["description"] = v.(string)
+			} else {
+				bodyData["description"] = ""
+			}
+			// if v, ok := d.GetOk("group"); ok {
+			// 	bodyData["group"] = v.(string)
+			// }
 			jsonBody, _ := json.Marshal(bodyData)
 
-			req, _ := http.NewRequest("PATCH", insertUri, bytes.NewBuffer(jsonBody))
-			req.Header.Set("Authorization", "Bearer "+apiData.Token)
-			req.Header.Set("Content-Type", "application/json")
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				panic(err)
-			}
+			resp, _ := api.ApiInteraction(apiUri, apiData.Token, "PATCH", bytes.NewBuffer(jsonBody))
 			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				panic(fmt.Errorf("auth failed: %s", resp.Status))
-			}
 
 			var apiResp APIResponse
 			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
@@ -320,17 +177,9 @@ func resourceDevice() *schema.Resource {
 
 			id := d.Id()
 
-			insertUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.InsertUri, id)
+			apiUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.DeviceUri, id)
 
-			req, _ := http.NewRequest("DELETE", insertUri, nil)
-			req.Header.Set("Authorization", "Bearer "+apiData.Token)
-			req.Header.Set("Content-Type", "application/json")
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				panic(err)
-			}
+			resp, _ := api.ApiInteraction(apiUri, apiData.Token, "DELETE", nil)
 			defer resp.Body.Close()
 
 			d.SetId("")
@@ -353,6 +202,15 @@ func resourceDevice() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 			},
+			"description": {
+				Type:     schema.TypeString,
+				Optional: true,
+			},
+			// "group": {
+			// 	Type:     schema.TypeList,
+			// 	Optional: true,
+			// 	Elem:     &schema.Schema{Type: schema.TypeString},
+			// },
 		},
 	}
 }
@@ -364,28 +222,15 @@ func resourceDeviceGroup() *schema.Resource {
 		CreateContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 
 			apiData := m.(*APIClient)
-
-			insertUri := fmt.Sprintf("%s%s", apiData.UpsnapHost, constants.InsertGroupUri)
+			apiUri := fmt.Sprintf("%s%s", apiData.UpsnapHost, constants.DeviceGroupUri)
 
 			bodyData := map[string]string{
 				"name": d.Get("name").(string),
 			}
 			jsonBody, _ := json.Marshal(bodyData)
 
-			req, _ := http.NewRequest("POST", insertUri, bytes.NewBuffer(jsonBody))
-			req.Header.Set("Authorization", "Bearer "+apiData.Token)
-			req.Header.Set("Content-Type", "application/json")
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				panic(err)
-			}
+			resp, _ := api.ApiInteraction(apiUri, apiData.Token, "POST", bytes.NewBuffer(jsonBody))
 			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				panic(fmt.Errorf("auth failed: %s", resp.Status))
-			}
 
 			var apiResp APIResponse
 			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
@@ -402,23 +247,10 @@ func resourceDeviceGroup() *schema.Resource {
 			apiData := m.(*APIClient)
 
 			id := d.Id()
+			apiUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.DeviceGroupUri, id)
 
-			apiUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.InsertGroupUri, id)
-
-			req, _ := http.NewRequest("GET", apiUri, nil)
-			req.Header.Set("Authorization", "Bearer "+apiData.Token)
-			req.Header.Set("Content-Type", "application/json")
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				panic(err)
-			}
+			resp, _ := api.ApiInteraction(apiUri, apiData.Token, "GET", nil)
 			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				panic(fmt.Errorf("auth failed: %s", resp.Status))
-			}
 
 			var apiResp DeviceGroupResponse
 			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
@@ -436,27 +268,15 @@ func resourceDeviceGroup() *schema.Resource {
 
 			id := d.Id()
 
-			insertUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.InsertGroupUri, id)
+			apiUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.DeviceGroupUri, id)
 
 			bodyData := map[string]string{
 				"name": d.Get("name").(string),
 			}
 			jsonBody, _ := json.Marshal(bodyData)
 
-			req, _ := http.NewRequest("PATCH", insertUri, bytes.NewBuffer(jsonBody))
-			req.Header.Set("Authorization", "Bearer "+apiData.Token)
-			req.Header.Set("Content-Type", "application/json")
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				panic(err)
-			}
+			resp, _ := api.ApiInteraction(apiUri, apiData.Token, "PATCH", bytes.NewBuffer(jsonBody))
 			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				panic(fmt.Errorf("auth failed: %s", resp.Status))
-			}
 
 			var apiResp APIResponse
 			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
@@ -471,20 +291,13 @@ func resourceDeviceGroup() *schema.Resource {
 
 			id := d.Id()
 
-			insertUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.InsertGroupUri, id)
+			apiUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.DeviceGroupUri, id)
 
-			req, _ := http.NewRequest("DELETE", insertUri, nil)
-			req.Header.Set("Authorization", "Bearer "+apiData.Token)
-			req.Header.Set("Content-Type", "application/json")
-
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				panic(err)
-			}
+			resp, _ := api.ApiInteraction(apiUri, apiData.Token, "DELETE", nil)
 			defer resp.Body.Close()
 
 			d.SetId("")
+
 			return nil
 
 		},
