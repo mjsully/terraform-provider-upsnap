@@ -25,10 +25,12 @@ type APIResponse struct {
 }
 
 type DeviceResponse struct {
-	Name    string `json:"name"`
-	IP      string `json:"ip"`
-	Mac     string `json:"mac"`
-	Netmask string `json:"netmask"`
+	Name        string   `json:"name"`
+	IP          string   `json:"ip"`
+	Mac         string   `json:"mac"`
+	Netmask     string   `json:"netmask"`
+	Description string   `json:"description"`
+	Groups      []string `json:"groups"`
 }
 
 type DeviceGroupResponse struct {
@@ -81,6 +83,14 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 	return apiClient, nil
 }
 
+func expandStringList(list []interface{}) []string {
+	result := make([]string, len(list))
+	for i, v := range list {
+		result[i] = v.(string)
+	}
+	return result
+}
+
 func resourceDevice() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
@@ -89,7 +99,7 @@ func resourceDevice() *schema.Resource {
 
 			apiUri := fmt.Sprintf("%s%s", apiData.UpsnapHost, constants.DeviceUri)
 
-			bodyData := map[string]string{
+			bodyData := map[string]interface{}{
 				"name":    d.Get("name").(string),
 				"ip":      d.Get("ip").(string),
 				"mac":     d.Get("mac").(string),
@@ -98,8 +108,13 @@ func resourceDevice() *schema.Resource {
 			if v, ok := d.GetOk("description"); ok {
 				bodyData["description"] = v.(string)
 			}
-			if v, ok := d.GetOk("group"); ok {
-				bodyData["group"] = v.(string)
+			if v, ok := d.GetOk("groups"); ok {
+				rawGroups := v.([]interface{})
+				stringGroups := make([]string, len(rawGroups))
+				for i, value := range rawGroups {
+					stringGroups[i] = value.(string)
+				}
+				bodyData["groups"] = stringGroups
 			}
 			jsonBody, _ := json.Marshal(bodyData)
 
@@ -133,8 +148,13 @@ func resourceDevice() *schema.Resource {
 			d.Set("ip", apiResp.IP)
 			d.Set("mac", apiResp.Mac)
 			d.Set("netmask", apiResp.Netmask)
-			if v, ok := d.GetOk("description"); ok {
-				d.Set("description", v.(string))
+			d.Set("description", apiResp.Description)
+			if apiResp.Groups != nil {
+				groupsList := make([]interface{}, len(apiResp.Groups))
+				for i, group := range apiResp.Groups {
+					groupsList[i] = group
+				}
+				d.Set("groups", groupsList)
 			}
 
 			return nil
@@ -146,7 +166,7 @@ func resourceDevice() *schema.Resource {
 			id := d.Id()
 			apiUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.DeviceUri, id)
 
-			bodyData := map[string]string{
+			bodyData := map[string]interface{}{
 				"name":    d.Get("name").(string),
 				"ip":      d.Get("ip").(string),
 				"mac":     d.Get("mac").(string),
@@ -157,9 +177,14 @@ func resourceDevice() *schema.Resource {
 			} else {
 				bodyData["description"] = ""
 			}
-			// if v, ok := d.GetOk("group"); ok {
-			// 	bodyData["group"] = v.(string)
-			// }
+			if v, ok := d.GetOk("groups"); ok {
+				rawGroups := v.([]interface{})
+				stringGroups := make([]string, len(rawGroups))
+				for i, value := range rawGroups {
+					stringGroups[i] = value.(string)
+				}
+				bodyData["groups"] = stringGroups
+			}
 			jsonBody, _ := json.Marshal(bodyData)
 
 			resp, _ := api.ApiInteraction(apiUri, apiData.Token, "PATCH", bytes.NewBuffer(jsonBody))
@@ -206,11 +231,11 @@ func resourceDevice() *schema.Resource {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
-			// "group": {
-			// 	Type:     schema.TypeList,
-			// 	Optional: true,
-			// 	Elem:     &schema.Schema{Type: schema.TypeString},
-			// },
+			"groups": {
+				Type:     schema.TypeList,
+				Optional: true,
+				Elem:     &schema.Schema{Type: schema.TypeString},
+			},
 		},
 	}
 }
