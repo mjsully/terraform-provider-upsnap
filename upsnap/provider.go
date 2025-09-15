@@ -30,6 +30,7 @@ type DeviceResponse struct {
 	Mac         string   `json:"mac"`
 	Netmask     string   `json:"netmask"`
 	Description string   `json:"description"`
+	Link        string   `json:"link"`
 	Groups      []string `json:"groups"`
 }
 
@@ -108,6 +109,10 @@ func resourceDevice() *schema.Resource {
 			if v, ok := d.GetOk("description"); ok {
 				bodyData["description"] = v.(string)
 			}
+			if v, ok := d.GetOk("link"); ok {
+				bodyData["link"] = v.(string)
+				bodyData["link_open"] = "new_tab"
+			}
 			if v, ok := d.GetOk("groups"); ok {
 				rawGroups := v.([]interface{})
 				stringGroups := make([]string, len(rawGroups))
@@ -149,6 +154,7 @@ func resourceDevice() *schema.Resource {
 			d.Set("mac", apiResp.Mac)
 			d.Set("netmask", apiResp.Netmask)
 			d.Set("description", apiResp.Description)
+			d.Set("link", apiResp.Link)
 			if apiResp.Groups != nil {
 				groupsList := make([]interface{}, len(apiResp.Groups))
 				for i, group := range apiResp.Groups {
@@ -176,6 +182,12 @@ func resourceDevice() *schema.Resource {
 				bodyData["description"] = v.(string)
 			} else {
 				bodyData["description"] = ""
+			}
+			if v, ok := d.GetOk("link"); ok {
+				bodyData["link"] = v.(string)
+				bodyData["link_open"] = "new_tab"
+			} else {
+				bodyData["link"] = ""
 			}
 			if v, ok := d.GetOk("groups"); ok {
 				rawGroups := v.([]interface{})
@@ -228,6 +240,10 @@ func resourceDevice() *schema.Resource {
 				Required: true,
 			},
 			"description": {
+				Type:     schema.TypeString,
+				Optional: true,
+			},
+			"link": {
 				Type:     schema.TypeString,
 				Optional: true,
 			},
