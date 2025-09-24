@@ -17,7 +17,7 @@ type AuthResponse struct {
 	} `json:"record"`
 }
 
-func Authenticate(upsnapHost string, username string, password string) AuthResponse {
+func Authenticate(upsnapHost string, username string, password string) (AuthResponse, error) {
 
 	apiUri := fmt.Sprintf("%s%s", upsnapHost, constants.AuthUri)
 
@@ -27,15 +27,18 @@ func Authenticate(upsnapHost string, username string, password string) AuthRespo
 	}
 	jsonBody, _ := json.Marshal(bodyData)
 
-	resp, _ := ApiInteraction(apiUri, "", "POST", bytes.NewBuffer(jsonBody))
+	resp, err := ApiInteraction(apiUri, "", "POST", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return AuthResponse{}, fmt.Errorf("failed to build auth request: %w", err)
+	}
 	defer resp.Body.Close()
 
 	var authResp AuthResponse
 	if err := json.NewDecoder(resp.Body).Decode(&authResp); err != nil {
-		panic(err)
+		return AuthResponse{}, fmt.Errorf("failed to build auth request: %w", err)
 	}
 
-	return authResp
+	return authResp, nil
 
 }
 
@@ -49,7 +52,10 @@ func ApiInteraction(uri string, token string, method string, body io.Reader) (*h
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("API interaction failed: %w", err)
+	}
 
-	return resp, err
+	return resp, nil
 
 }

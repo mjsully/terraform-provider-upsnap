@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -68,11 +69,16 @@ func Provider() *schema.Provider {
 
 // ConfigureContextFunc runs when provider is initialized
 func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
 	username := d.Get("username").(string)
 	password := d.Get("password").(string)
 	upsnapHost := d.Get("upsnap_host").(string)
 
-	token := api.Authenticate(upsnapHost, username, password)
+	token, err := api.Authenticate(upsnapHost, username, password)
+	if err != nil {
+		return nil, diag.FromErr(err)
+	}
 
 	apiClient := &APIClient{
 		Client:     &http.Client{},
@@ -81,7 +87,7 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 		UserID:     token.User.ID,
 	}
 
-	return apiClient, nil
+	return apiClient, diags
 }
 
 func expandStringList(list []interface{}) []string {
@@ -123,8 +129,12 @@ func resourceDevice() *schema.Resource {
 			}
 			jsonBody, _ := json.Marshal(bodyData)
 
-			resp, _ := api.ApiInteraction(apiUri, apiData.Token, "POST", bytes.NewBuffer(jsonBody))
+			resp, err := api.ApiInteraction(apiUri, apiData.Token, "POST", bytes.NewBuffer(jsonBody))
 			defer resp.Body.Close()
+
+			if err != nil {
+				return diag.Errorf("Failed to fetch thing %s: %s", d.Id(), err)
+			}
 
 			var apiResp APIResponse
 			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
@@ -135,35 +145,63 @@ func resourceDevice() *schema.Resource {
 			return nil
 		},
 		ReadContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+			var diags diag.Diagnostics
 
 			apiData := m.(*APIClient)
 
 			id := d.Id()
 			apiUri := fmt.Sprintf("%s%s/%s", apiData.UpsnapHost, constants.DeviceUri, id)
 
-			resp, _ := api.ApiInteraction(apiUri, apiData.Token, "GET", nil)
+			resp, err := api.ApiInteraction(apiUri, apiData.Token, "GET", nil)
+			if err != nil {
+				return diag.Errorf("Error calling API for device %s: %s", id, err)
+			}
 			defer resp.Body.Close()
+
+			if resp.StatusCode == http.StatusNotFound {
+				d.SetId("")
+				return diags
+			}
+
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				return diag.Errorf("Unexpected API response (%d): %s", resp.StatusCode, string(body))
+			}
 
 			var apiResp DeviceResponse
 			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-				panic(err)
+				return diag.FromErr(fmt.Errorf("Failed to decode API response for device %s: %w", id, err))
 			}
 
-			d.Set("name", apiResp.Name)
-			d.Set("ip", apiResp.IP)
-			d.Set("mac", apiResp.Mac)
-			d.Set("netmask", apiResp.Netmask)
-			d.Set("description", apiResp.Description)
-			d.Set("link", apiResp.Link)
+			if err := d.Set("name", apiResp.Name); err != nil {
+				return diag.FromErr(err)
+			}
+			if err := d.Set("ip", apiResp.IP); err != nil {
+				return diag.FromErr(err)
+			}
+			if err := d.Set("mac", apiResp.Mac); err != nil {
+				return diag.FromErr(err)
+			}
+			if err := d.Set("netmask", apiResp.Netmask); err != nil {
+				return diag.FromErr(err)
+			}
+			if err := d.Set("description", apiResp.Description); err != nil {
+				return diag.FromErr(err)
+			}
+			if err := d.Set("link", apiResp.Link); err != nil {
+				return diag.FromErr(err)
+			}
 			if apiResp.Groups != nil {
 				groupsList := make([]interface{}, len(apiResp.Groups))
 				for i, group := range apiResp.Groups {
 					groupsList[i] = group
 				}
-				d.Set("groups", groupsList)
+				if err := d.Set("groups", groupsList); err != nil {
+					return diag.FromErr(err)
+				}
 			}
 
-			return nil
+			return diags
 		},
 		UpdateContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 
@@ -262,6 +300,8 @@ func resourceDeviceGroup() *schema.Resource {
 
 		CreateContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
 
+			var diags diag.Diagnostics
+
 			apiData := m.(*APIClient)
 			apiUri := fmt.Sprintf("%s%s", apiData.UpsnapHost, constants.DeviceGroupUri)
 
@@ -270,17 +310,20 @@ func resourceDeviceGroup() *schema.Resource {
 			}
 			jsonBody, _ := json.Marshal(bodyData)
 
-			resp, _ := api.ApiInteraction(apiUri, apiData.Token, "POST", bytes.NewBuffer(jsonBody))
+			resp, err := api.ApiInteraction(apiUri, apiData.Token, "POST", bytes.NewBuffer(jsonBody))
+			if err != nil {
+				return diag.Errorf("Error creating resource: %s", err)
+			}
 			defer resp.Body.Close()
 
 			var apiResp APIResponse
 			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-				panic(err)
+				return diag.FromErr(fmt.Errorf("Failed to decode API response: %w", err))
 			}
 
 			d.SetId(apiResp.ID)
 
-			return nil
+			return diags
 
 		},
 		ReadContext: func(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
