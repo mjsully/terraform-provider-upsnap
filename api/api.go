@@ -10,6 +10,13 @@ import (
 	"github.com/mjsully/terraform-provider-upsnap/constants"
 )
 
+type APIClient struct {
+	Client     *http.Client
+	UpsnapHost string
+	Token      string
+	UserID     string
+}
+
 type AuthResponse struct {
 	Token string `json:"token"` // adapt to actual API response
 	User  struct {
@@ -26,6 +33,8 @@ func Authenticate(upsnapHost string, username string, password string) (AuthResp
 		"password": password,
 	}
 	jsonBody, _ := json.Marshal(bodyData)
+
+	// tflog.Debug(context.AfterFunc(), fmt.Sprintf("Attemping API request with the following data: %s, %s", apiUri, upsnapHost))
 
 	resp, err := ApiInteraction(apiUri, "", "POST", bytes.NewBuffer(jsonBody))
 	if err != nil {
@@ -44,18 +53,20 @@ func Authenticate(upsnapHost string, username string, password string) (AuthResp
 
 func ApiInteraction(uri string, token string, method string, body io.Reader) (*http.Response, error) {
 
-	req, _ := http.NewRequest(method, uri, body)
+	fmt.Printf("Attemping API request with the following data: %s, %s", uri, token)
+
+	request, _ := http.NewRequest(method, uri, body)
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Authorization", "Bearer "+token)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
-	resp, err := client.Do(req)
+	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("API interaction failed: %w", err)
 	}
 
-	return resp, nil
+	return response, nil
 
 }
