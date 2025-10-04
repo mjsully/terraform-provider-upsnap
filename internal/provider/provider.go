@@ -91,6 +91,7 @@ func (p *UpsnapProvider) Metadata(_ context.Context, _ provider.MetadataRequest,
 func (p *UpsnapProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewDeviceGroupResource,
+		NewDeviceResource,
 	}
 }
 
