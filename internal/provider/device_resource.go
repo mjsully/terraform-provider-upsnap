@@ -20,13 +20,14 @@ var (
 )
 
 type DeviceResponse struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	IP          string `json:"ip"`
-	Mac         string `json:"mac"`
-	Netmask     string `json:"netmask"`
-	Description string `json:"description"`
-	Link        string `json:"link"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	IP          string   `json:"ip"`
+	Mac         string   `json:"mac"`
+	Netmask     string   `json:"netmask"`
+	Description string   `json:"description"`
+	Link        string   `json:"link"`
+	Groups      []string `json:"groups"`
 }
 
 func NewDeviceResource() resource.Resource {
@@ -38,13 +39,14 @@ type deviceResource struct {
 }
 
 type deviceResourceModel struct {
-	ID          types.String `tfsdk:"id"`
-	Name        types.String `tfsdk:"name"`
-	IP          types.String `tfsdk:"ip"`
-	Mac         types.String `tfsdk:"mac"`
-	Netmask     types.String `tfsdk:"netmask"`
-	Description types.String `tfsdk:"description"`
-	Link        types.String `tfsdk:"link"`
+	ID          types.String   `tfsdk:"id"`
+	Name        types.String   `tfsdk:"name"`
+	IP          types.String   `tfsdk:"ip"`
+	Mac         types.String   `tfsdk:"mac"`
+	Netmask     types.String   `tfsdk:"netmask"`
+	Description types.String   `tfsdk:"description"`
+	Link        types.String   `tfsdk:"link"`
+	Groups      []types.String `tfsdk:"groups"`
 	// updated types.String `tfsdk:"updated"`
 }
 
@@ -72,10 +74,14 @@ func (r *deviceResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 				Required: true,
 			},
 			"description": schema.StringAttribute{
-				Required: true,
+				Optional: true,
 			},
 			"link": schema.StringAttribute{
-				Required: true,
+				Optional: true,
+			},
+			"groups": schema.ListAttribute{
+				ElementType: types.StringType,
+				Optional:    true,
 			},
 		},
 	}
@@ -113,13 +119,19 @@ func (r *deviceResource) Create(ctx context.Context, req resource.CreateRequest,
 
 	apiUri := fmt.Sprintf("%s%s", r.client.UpsnapHost, constants.DeviceUri)
 
-	bodyData := map[string]string{
+	var groupsList []string
+	for _, group := range plan.Groups {
+		groupsList = append(groupsList, group.ValueString())
+	}
+
+	bodyData := map[string]interface{}{
 		"name":        plan.Name.ValueString(),
 		"ip":          plan.IP.ValueString(),
 		"mac":         plan.Mac.ValueString(),
 		"netmask":     plan.Netmask.ValueString(),
 		"description": plan.Description.ValueString(),
 		"link":        plan.Link.ValueString(),
+		"groups":      groupsList,
 	}
 	jsonBody, _ := json.Marshal(bodyData)
 
@@ -178,6 +190,11 @@ func (r *deviceResource) Read(ctx context.Context, req resource.ReadRequest, res
 		)
 	}
 
+	groups := make([]types.String, len(apiResp.Groups))
+	for i, g := range apiResp.Groups {
+		groups[i] = types.StringValue(g)
+	}
+
 	state.ID = types.StringValue(id)
 	state.Name = types.StringValue(apiResp.Name)
 	state.IP = types.StringValue(apiResp.IP)
@@ -185,6 +202,7 @@ func (r *deviceResource) Read(ctx context.Context, req resource.ReadRequest, res
 	state.Netmask = types.StringValue(apiResp.Netmask)
 	state.Description = types.StringValue(apiResp.Description)
 	state.Link = types.StringValue(apiResp.Link)
+	state.Groups = groups
 
 	diags = resp.State.Set(ctx, &state)
 	resp.Diagnostics.Append(diags...)
@@ -213,13 +231,19 @@ func (r *deviceResource) Update(ctx context.Context, req resource.UpdateRequest,
 
 	apiUri := fmt.Sprintf("%s%s/%s", r.client.UpsnapHost, constants.DeviceUri, id)
 
-	bodyData := map[string]string{
+	var groupsList []string
+	for _, group := range plan.Groups {
+		groupsList = append(groupsList, group.ValueString())
+	}
+
+	bodyData := map[string]interface{}{
 		"name":        plan.Name.ValueString(),
 		"ip":          plan.IP.ValueString(),
 		"mac":         plan.Mac.ValueString(),
 		"netmask":     plan.Netmask.ValueString(),
 		"description": plan.Description.ValueString(),
 		"link":        plan.Link.ValueString(),
+		"groups":      groupsList,
 	}
 	jsonBody, _ := json.Marshal(bodyData)
 
